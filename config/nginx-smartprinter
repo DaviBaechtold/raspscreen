@@ -1,0 +1,28 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /home/pi/smartprinter/web;
+    index index.html;
+
+    # Proxy reverso para Moonraker — HTTP + WebSocket
+    location /moonraker/ {
+        proxy_pass http://127.0.0.1:7125/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host       $host;
+        proxy_read_timeout 86400;
+    }
+
+    # Stream MJPEG da webcam via Crowsnest
+    location /webcam/ {
+        proxy_pass http://127.0.0.1:8080/;
+    }
+
+    # Mainsail — acesso para configuração avançada do Klipper
+    location /mainsail/ {
+        alias /home/pi/mainsail/;
+        try_files $uri $uri/ /mainsail/index.html;
+    }
+}

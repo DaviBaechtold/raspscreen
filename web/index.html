@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Printer</title>
+<style>
+  :root {
+    --bg:      #121212;
+    --surface: #1e1e1e;
+    --surf2:   #2d2d2d;
+    --accent:  #00bcd4;
+    --text:    #e6e6e6;
+    --dim:     #787878;
+    --hot:     #ff5722;
+    --warm:    #ffc107;
+    --ok:      #4caf50;
+    --error:   #f44336;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: var(--surface);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--surf2);
+    flex-wrap: wrap;
+  }
+  .brand { color: var(--accent); font-weight: 700; font-size: 1.1rem; }
+  .ip-badge { margin-left: auto; color: var(--dim); font-size: 0.8rem; }
+  .status-badge {
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #111;
+    transition: background 0.3s;
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    padding: 16px;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+    align-content: start;
+  }
+
+  .card {
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card-label {
+    font-size: 0.7rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .temp-big { font-size: 2.2rem; font-weight: 700; transition: color 0.3s; }
+  .temp-target { font-size: 0.85rem; color: var(--accent); margin-top: 4px; }
+
+  .bar-track {
+    background: var(--surf2);
+    border-radius: 6px;
+    height: 10px;
+    margin-top: 12px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    background: var(--warm);
+    transition: width 0.5s ease, background 0.3s;
+  }
+
+  .webcam-card {
+    grid-column: 2 / 4;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+  }
+  .webcam-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .webcam-offline { color: var(--dim); font-size: 0.85rem; }
+
+  .filename {
+    grid-column: 1 / -1;
+    color: var(--dim);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 1.2em;
+  }
+
+  .buttons-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .btn {
+    padding: 18px 10px;
+    border-radius: 10px;
+    background: var(--surf2);
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.15s, transform 0.1s;
+    text-align: center;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+  }
+  .btn-pla::before  { background: var(--warm); }
+  .btn-abs::before  { background: var(--hot); }
+  .btn-cool::before { background: var(--dim); }
+  .btn:hover  { background: #3a3a3a; }
+  .btn:active { transform: scale(0.97); }
+  .btn small  { display: block; font-weight: 400; color: var(--dim); font-size: 0.75rem; margin-top: 4px; }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: var(--error);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 100;
+  }
+  .overlay.show { opacity: 1; pointer-events: all; }
+
+  footer {
+    background: var(--surface);
+    padding: 8px 20px;
+    font-size: 0.7rem;
+    color: var(--dim);
+    text-align: center;
+    border-top: 1px solid var(--surf2);
+  }
+
+  @media (max-width: 640px) {
+    main { grid-template-columns: 1fr 1fr; }
+    .webcam-card { grid-column: 1 / -1; }
+    .buttons-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">Smart Printer</span>
+  <span id="statusBadge" class="status-badge" style="background:var(--dim)">…</span>
+  <span class="ip-badge" id="ipText">buscando IP…</span>
+</header>
+
+<main>
+  <div class="card">
+    <div class="card-label">Bico (Extrusor)</div>
+    <div class="temp-big" id="extTemp">–°</div>
+    <div class="temp-target" id="extTarget">→ –°</div>
+    <div class="bar-track"><div class="bar-fill" id="extBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Mesa (Cama)</div>
+    <div class="temp-big" id="bedTemp">–°</div>
+    <div class="temp-target" id="bedTarget">→ –°</div>
+    <div class="bar-track"><div class="bar-fill" id="bedBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Progresso</div>
+    <div class="temp-big" id="progressPct">0%</div>
+    <div class="temp-target" id="layerInfo">Camada –/–</div>
+    <div class="bar-track"><div class="bar-fill" id="progressBar" style="width:0%;background:var(--accent)"></div></div>
+  </div>
+
+  <div class="webcam-card">
+    <img id="webcamImg"
+         src="/webcam/?action=stream"
+         onerror="this.style.display='none';document.getElementById('wcOffline').style.display='block'"
+         alt="Webcam">
+    <span class="webcam-offline" id="wcOffline" style="display:none">Câmera offline</span>
+  </div>
+
+  <div class="filename" id="filename"></div>
+
+  <div class="buttons-row">
+    <button class="btn btn-pla"  onclick="sendGcode('PREHEAT_PLA')">
+      PLA<small>Bico 200° / Mesa 60°</small>
+    </button>
+    <button class="btn btn-abs"  onclick="sendGcode('PREHEAT_ABS')">
+      ABS<small>Bico 240° / Mesa 100°</small>
+    </button>
+    <button class="btn btn-cool" onclick="sendGcode('COOLDOWN')">
+      Resfriar<small>Desligar aquecedores</small>
+    </button>
+  </div>
+</main>
+
+<footer>Moonraker API &nbsp;●&nbsp; Klipper &nbsp;●&nbsp; Smart Printer</footer>
+
+<div class="overlay" id="overlay">Moonraker desconectado — reconectando…</div>
+
+<script>
+const API  = `${location.protocol}//${location.host}/moonraker`;
+const WS   = `ws://${location.host}/moonraker/websocket`;
+
+const STATUS_COLORS = {
+  idle:         'var(--ok)',
+  printing:     'var(--accent)',
+  paused:       'var(--warm)',
+  error:        'var(--error)',
+  disconnected: 'var(--dim)',
+};
+
+const STATUS_MAP = {
+  standby: 'idle', printing: 'printing',
+  paused:  'paused', error: 'error', complete: 'idle',
+};
+
+let state = {
+  extruder_temp: 0, extruder_target: 0,
+  bed_temp: 0,      bed_target: 0,
+  progress: 0,      status: 'disconnected',
+  current_layer: 0, total_layers: 0,
+  filename: '',
+};
+
+let reqId = 1, ws;
+
+function connect() {
+  ws = new WebSocket(WS);
+
+  ws.onopen = () => {
+    document.getElementById('overlay').classList.remove('show');
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0', method: 'printer.objects.subscribe',
+      params: { objects: {
+        extruder:       ['temperature','target'],
+        heater_bed:     ['temperature','target'],
+        print_stats:    ['state','filename','current_layer','total_layer'],
+        display_status: ['progress'],
+      }},
+      id: reqId++,
+    }));
+    fetch(`${API}/machine/system_info`)
+      .then(r => r.json())
+      .then(d => {
+        const ifaces = d?.result?.system_info?.network ?? {};
+        const ip = Object.values(ifaces)
+          .flatMap(i => i.ip_addresses ?? [])
+          .find(a => a.family === 'ipv4' && !a.is_link_local)?.address;
+        document.getElementById('ipText').textContent = ip ? `IP: ${ip}` : '';
+      })
+      .catch(() => {});
+  };
+
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
+    if (msg.method === 'notify_status_update')   applyUpdate(msg.params[0]);
+    if (msg.method === 'notify_klippy_ready')    { state.status = 'idle';         render(); }
+    if (msg.method === 'notify_klippy_disconnect'){ state.status = 'disconnected'; render(); }
+  };
+
+  ws.onclose = () => {
+    state.status = 'disconnected';
+    render();
+    document.getElementById('overlay').classList.add('show');
+    setTimeout(connect, 5000);
+  };
+}
+
+function applyUpdate(data) {
+  if (data.extruder) {
+    state.extruder_temp   = data.extruder.temperature ?? state.extruder_temp;
+    state.extruder_target = data.extruder.target      ?? state.extruder_target;
+  }
+  if (data.heater_bed) {
+    state.bed_temp   = data.heater_bed.temperature ?? state.bed_temp;
+    state.bed_target = data.heater_bed.target      ?? state.bed_target;
+  }
+  if (data.print_stats) {
+    const ps = data.print_stats;
+    if (ps.state !== undefined)         state.status        = STATUS_MAP[ps.state] ?? state.status;
+    if (ps.filename !== undefined)      state.filename      = ps.filename;
+    if (ps.current_layer !== undefined) state.current_layer = ps.current_layer;
+    if (ps.total_layer   !== undefined) state.total_layers  = ps.total_layer;
+  }
+  if (data.display_status?.progress !== undefined)
+    state.progress = data.display_status.progress;
+  render();
+}
+
+function render() {
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = state.status.toUpperCase();
+  badge.style.background = STATUS_COLORS[state.status] ?? 'var(--dim)';
+
+  const extEl = document.getElementById('extTemp');
+  extEl.textContent   = `${state.extruder_temp.toFixed(1)}°`;
+  extEl.style.color   = state.extruder_temp > 50 ? 'var(--hot)' : 'var(--text)';
+  document.getElementById('extTarget').textContent = `→ ${state.extruder_target.toFixed(0)}°`;
+  const extPct = state.extruder_target > 0
+    ? Math.min(100, (state.extruder_temp / state.extruder_target) * 100) : 0;
+  const extBar = document.getElementById('extBar');
+  extBar.style.width      = `${extPct}%`;
+  extBar.style.background = extPct >= 98 ? 'var(--ok)' : 'var(--warm)';
+
+  const bedEl = document.getElementById('bedTemp');
+  bedEl.textContent   = `${state.bed_temp.toFixed(1)}°`;
+  bedEl.style.color   = state.bed_temp > 30 ? 'var(--hot)' : 'var(--text)';
+  document.getElementById('bedTarget').textContent = `→ ${state.bed_target.toFixed(0)}°`;
+  const bedPct = state.bed_target > 0
+    ? Math.min(100, (state.bed_temp / state.bed_target) * 100) : 0;
+  const bedBar = document.getElementById('bedBar');
+  bedBar.style.width      = `${bedPct}%`;
+  bedBar.style.background = bedPct >= 98 ? 'var(--ok)' : 'var(--warm)';
+
+  const pct = Math.round(state.progress * 100);
+  document.getElementById('progressPct').textContent = `${pct}%`;
+  document.getElementById('progressBar').style.width = `${pct}%`;
+  document.getElementById('layerInfo').textContent =
+    state.total_layers > 0
+      ? `Camada ${state.current_layer}/${state.total_layers}`
+      : 'Camada –/–';
+
+  document.getElementById('filename').textContent =
+    state.filename ? `Arquivo: ${state.filename}` : '';
+}
+
+async function sendGcode(script) {
+  try {
+    await fetch(`${API}/printer/gcode/script`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script }),
+    });
+  } catch (e) { console.error('Gcode error:', e); }
+}
+
+connect();
+</script>
+</body>
+</html>

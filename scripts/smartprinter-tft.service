@@ -1,0 +1,17 @@
+[Unit]
+Description=Smart Printer TFT Interface
+After=network.target moonraker.service
+Wants=moonraker.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/smartprinter
+ExecStart=/home/pi/smartprinter/venv/bin/python main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
