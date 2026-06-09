@@ -17,8 +17,19 @@ CAL_Y_MIN, CAL_Y_MAX = 200, 3800
 SCREEN_W, SCREEN_H   = 480, 320
 
 
+def _force_gpio_reset(pin: int):
+    """Force-unexport pin via sysfs to clear stale kernel edge-detection state."""
+    try:
+        with open("/sys/class/gpio/unexport", "w") as f:
+            f.write(str(pin))
+    except OSError:
+        pass
+
+
 class XPT2046Touch:
     def __init__(self, spi_bus=0, spi_device=1, spi_speed=1_000_000):
+        _force_gpio_reset(PIN_T_IRQ)
+
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
         GPIO.setup(PIN_T_IRQ, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -57,5 +68,9 @@ class XPT2046Touch:
         self._callback = callback
 
     def cleanup(self):
-        GPIO.remove_event_detect(PIN_T_IRQ)
+        try:
+            GPIO.remove_event_detect(PIN_T_IRQ)
+        except Exception:
+            pass
         self.spi.close()
+        GPIO.cleanup(PIN_T_IRQ)

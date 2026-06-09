@@ -8,6 +8,12 @@ import time
 import struct
 from PIL import Image
 
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
 # Pinagem BCM
 PIN_DC   = 24
 PIN_RST  = 25
@@ -32,6 +38,8 @@ MADCTL_BGR = 0x08
 
 WIDTH  = 480
 HEIGHT = 320
+
+SPI_CHUNK = 4096
 
 
 class ST7796SDisplay:
@@ -68,15 +76,14 @@ class ST7796SDisplay:
         if isinstance(data, int):
             self.spi.writebytes([data])
         else:
-            for i in range(0, len(data), 4096):
-                self.spi.writebytes(data[i:i+4096])
+            mv = memoryview(data)
+            for i in range(0, len(data), SPI_CHUNK):
+                self.spi.writebytes2(mv[i:i + SPI_CHUNK])
 
     def _init_sequence(self):
-        # Pixel format: 16-bit RGB565 (0x55).
-        # Para ILI9488 em 18-bit use 0x66 e ajuste o empacotamento em display_image().
         self._cmd(CMD_SWRESET); time.sleep(0.15)
         self._cmd(CMD_SLPOUT);  time.sleep(0.15)
-        self._cmd(CMD_COLMOD);  self._data(0x55)
+        self._cmd(CMD_COLMOD);  self._data(0x55)   # 16-bit RGB565
         self._cmd(CMD_MADCTL);  self._data(MADCTL_MX | MADCTL_MV | MADCTL_BGR)
         self._cmd(CMD_INVOFF)
         self._cmd(CMD_NORON)
@@ -91,23 +98,14 @@ class ST7796SDisplay:
         self._cmd(CMD_RAMWR)
 
     def display_image(self, image: Image.Image):
-        """Envia uma imagem PIL RGB para o display inteiro via RGB565."""
+        """Envia imagem PIL RGB para o display inteiro via RGB565."""
         img = image.convert('RGB').resize((WIDTH, HEIGHT))
-        r_arr, g_arr, b_arr = [bytes(ch) for ch in img.split()]
-
-        buf = bytearray(WIDTH * HEIGHT * 2)
-        for i in range(WIDTH * HEIGHT):
-            r5 = r_arr[i] >> 3
-            g6 = g_arr[i] >> 2
-            b5 = b_arr[i] >> 3
-            pixel = (r5 << 11) | (g6 << 5) | b5
-            buf[i*2]     = (pixel >> 8) & 0xFF
-            buf[i*2 + 1] = pixel & 0xFF
-
+        buf = _rgb_to_rgb565(img)
         self._set_window(0, 0, WIDTH - 1, HEIGHT - 1)
         GPIO.output(PIN_DC, GPIO.HIGH)
-        for i in range(0, len(buf), 4096):
-            self.spi.writebytes(buf[i:i+4096])
+        mv = memoryview(buf)
+        for i in range(0, len(buf), SPI_CHUNK):
+            self.spi.writebytes2(mv[i:i + SPI_CHUNK])
 
     def backlight(self, on: bool):
         GPIO.output(PIN_BL, GPIO.HIGH if on else GPIO.LOW)
@@ -115,3 +113,25 @@ class ST7796SDisplay:
     def cleanup(self):
         self.spi.close()
         GPIO.cleanup()
+
+
+def _rgb_to_rgb565(img: Image.Image) -> bytearray:
+    if _HAS_NUMPY:
+        arr = np.asarray(img, dtype=np.uint16)
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+        rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+        return bytearray(rgb565.byteswap().tobytes())
+    # Pure-Python fallback
+    raw = img.tobytes()   # interleaved RGBRGB...
+    n = WIDTH * HEIGHT
+    buf = bytearray(n * 2)
+    for i in range(n):
+        r5 = raw[i * 3]     >> 3
+        g6 = raw[i * 3 + 1] >> 2
+        b5 = raw[i * 3 + 2] >> 3
+        pixel = (r5 << 11) | (g6 << 5) | b5
+        buf[i * 2]     = pixel >> 8
+        buf[i * 2 + 1] = pixel & 0xFF
+    return buf
